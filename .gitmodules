@@ -1,0 +1,3 @@
+[submodule "kontiki"]
+	path = kontiki
+	url = https://github.com/abailly/kontiki.git
