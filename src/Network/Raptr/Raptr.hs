@@ -5,6 +5,6 @@ module Network.Raptr.Raptr where
 
 
 runRaptr :: IO Bool
-runRaprt = return False
+runRaptr = return False
 
 
