@@ -13,7 +13,7 @@ before_install:
 
 install:
   - stack setup --no-terminal
-  - stack build --only-snapshot --no-terminal --no-run-tests --with-test
+  - stack build --only-snapshot --no-terminal --no-run-tests
 
 script:
   - stack test --no-terminal
