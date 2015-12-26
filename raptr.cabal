@@ -27,7 +27,7 @@ test-suite tests
   hs-source-dirs:      test
   main-is:             Spec.hs
   build-depends:       base
-                     , raptr-http
+                     , raptr
                      , http-conduit
                      , wai, warp
                      , tasty >= 0.7, tasty-hspec 
@@ -36,4 +36,4 @@ test-suite tests
 
 source-repository head
   type:     git
-  location: https://github.com/capital-match/raptr-http
+  location: https://github.com/capital-match/raptr
