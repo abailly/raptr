@@ -1,5 +1,6 @@
 -- | Provides a simple concurrent @Queue@ interface.
--- This queue is bounded so @put@ting to it while it is full is blocking.
+-- This queue is bounded but all operations are non-blocking so it is the
+-- responsibility of the caller to handle success/failure of actions.
 module Control.Concurrent.Queue
        ( -- * Type
         Queue,
@@ -21,8 +22,15 @@ empty = (Queue <$>) . Q.newTBQueue
 newQueueIO :: Int -> IO (Queue a)
 newQueueIO = (Queue <$>) . Q.newTBQueueIO
 
-put :: Queue a -> a -> STM ()
-put (Queue q) a = Q.writeTBQueue q a
+-- | Try to put an element at 'end' of the queue
+--
+-- Returns `True` if operation succeeded, `False` otherwise.
+put :: Queue a -> a -> STM Bool
+put (Queue q) a = do
+  full <- Q.isFullTBQueue q
+  if not full
+    then Q.writeTBQueue q a >> return True
+    else return False
 
 take :: Queue a -> STM (Maybe a)
 take (Queue q) = Q.tryReadTBQueue q
