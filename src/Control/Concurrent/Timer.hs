@@ -5,7 +5,7 @@ module Control.Concurrent.Timer(
   -- * Type
   Timer,
   -- * Timer operations
-  start, reset, cancel,
+  newTimer, start, reset, cancel,
   -- * Timer wait
   awaitSTM)
        where
@@ -14,25 +14,27 @@ import           Control.Concurrent
 import qualified Control.Concurrent.Async as Async
 import           Control.Concurrent.STM
 
--- NOTE This implementation isn't very safe
+data Timer = Timer { timer :: TVar (Maybe (Async.Async ()))  }
 
-data Timer = Timer { timer :: Maybe (Async.Async ())  }
+newTimer :: IO Timer
+newTimer = Timer <$> newTVarIO Nothing
 
 -- | Starts @timer@ to fire after given @i@ microseconds.
 -- If @timer@ is already started, it is returned.
-start :: Int -> IO Timer
-start i = do
+start :: Timer -> Int -> IO ()
+start t i = do
   thread <- Async.async $ do
     threadDelay i
     return ()
-  return $ Timer (Just thread)
+  atomically $ writeTVar (timer t) (Just thread)
 
-reset ::  Int -> Timer -> IO Timer
-reset i t = cancel t >> start i
+reset ::  Timer -> Int -> IO ()
+reset t i = cancel t >> start t i
 
-cancel :: Timer -> IO Timer
-cancel (Timer (Just t)) = Async.cancel t >> return (Timer Nothing)
-cancel t                = return t
+cancel :: Timer -> IO ()
+cancel t = do
+  tid <- atomically $ readTVar (timer t)
+  maybe (return ()) Async.cancel tid
 
 awaitSTM :: Timer -> STM ()
-awaitSTM (Timer (Just t)) = Async.waitSTM t
+awaitSTM t = readTVar (timer t) >>= maybe (return ()) Async.waitSTM
