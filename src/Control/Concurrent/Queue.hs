@@ -24,8 +24,8 @@ newQueueIO = (Queue <$>) . Q.newTBQueueIO
 put :: Queue a -> a -> STM ()
 put (Queue q) a = Q.writeTBQueue q a
 
-take :: Queue a -> STM a
-take (Queue q) = Q.readTBQueue q
+take :: Queue a -> STM (Maybe a)
+take (Queue q) = Q.tryReadTBQueue q
 
 peek :: Queue a -> STM (Maybe a)
 peek (Queue q) = Q.tryPeekTBQueue q
