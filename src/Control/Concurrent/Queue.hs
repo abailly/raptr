@@ -6,7 +6,7 @@ module Control.Concurrent.Queue
         -- * Creation
         empty, newQueueIO,
         -- * Operations
-        put, take, flush)
+        put, take, peek, flush)
        where
 
 import           Control.Concurrent.STM
@@ -26,6 +26,9 @@ put (Queue q) a = Q.writeTBQueue q a
 
 take :: Queue a -> STM a
 take (Queue q) = Q.readTBQueue q
+
+peek :: Queue a -> STM (Maybe a)
+peek (Queue q) = Q.tryPeekTBQueue q
 
 flush :: Queue a -> STM [a]
 flush (Queue q) = loop q []
