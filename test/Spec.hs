@@ -1,7 +1,8 @@
 import           Test.Tasty
 import           Test.Tasty.Hspec
 
-import           RaptrSpec
+import           Network.Raptr.QueueSpec
 
 main :: IO ()
-main = testSpec "Bake" raptrSpec >>= defaultMain
+main = testGroup "Kontiki Specs" <$>
+       sequence [ testSpec "Queue" queueSpec ] >>= defaultMain
