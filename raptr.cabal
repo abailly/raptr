@@ -19,11 +19,10 @@ library
                      , Control.Concurrent.Queue
   other-modules:       Network.Raptr.Node
                      , Control.Concurrent.Timer
-  build-depends:       base >= 4.7 && < 5
+  build-depends:       base >= 4.7 && < 5, mtl
                      , kontiki
-                     , http-conduit
-                     , wai, warp
-                     , async, stm
+                     , http-conduit, wai, warp, network-uri
+                     , async, stm, random
                      , bytestring, containers
   default-language:    Haskell2010
 

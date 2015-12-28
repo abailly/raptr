@@ -7,12 +7,12 @@ module Control.Concurrent.Queue
         -- * Creation
         empty, newQueueIO,
         -- * Operations
-        put, take, peek, flush)
+        put, read, take, peek, flush)
        where
 
 import           Control.Concurrent.STM
 import qualified Control.Concurrent.STM.TBQueue as Q
-import           Prelude                        hiding (take)
+import           Prelude                        hiding (read, take)
 
 newtype Queue a = Queue { queue :: Q.TBQueue a }
 
@@ -31,6 +31,9 @@ put (Queue q) a = do
   if not full
     then Q.writeTBQueue q a >> return True
     else return False
+
+read :: Queue a -> STM a
+read (Queue q) = Q.readTBQueue q
 
 take :: Queue a -> STM (Maybe a)
 take (Queue q) = Q.tryReadTBQueue q
