@@ -23,7 +23,7 @@ library
                      , kontiki
                      , http-conduit, wai, warp, network-uri
                      , async, stm, random
-                     , bytestring, containers
+                     , bytestring, containers, binary
   default-language:    Haskell2010
 
 test-suite tests

@@ -14,7 +14,9 @@ import           Control.Concurrent.Timer     as Timer
 import           Control.Monad                (foldM, forM_)
 import           Control.Monad.State          as State
 import           Control.Monad.Trans          (MonadIO, liftIO)
-import           Data.ByteString              (ByteString)
+import qualified Data.Binary                  as B
+import           Data.Binary.Put              (putWord32be, runPut)
+import           Data.ByteString              (ByteString, hPut, length)
 import qualified Data.ByteString.Lazy.Builder as Builder
 import qualified Data.ByteString.Lazy.Char8   as LBS8
 import           Data.Kontiki.MemLog          (Log, runMemLog)
@@ -22,6 +24,9 @@ import qualified Data.Map                     as Map
 import           Network.Kontiki.Raft         as Raft
 import           Network.Raptr.Client
 import           Network.URI                  (URI)
+import           Prelude                      hiding (length)
+import           System.IO                    (IOMode (AppendMode),
+                                               withBinaryFile)
 import           System.Random                (randomRIO)
 
 -- | An arbitrary opaque value that is stored in the logs.
@@ -33,6 +38,14 @@ data NodeClient = NodeClient { clientNodeId   :: NodeId
 
 data CommandHandler a = CommandHandler { nodes :: Map.Map NodeId NodeClient }
 
+data FileLog = FileLog { logName :: FilePath }
+
+insertEntry :: FileLog -> Entry Value -> IO ()
+insertEntry FileLog{..} e = withBinaryFile logName AppendMode $ \ h -> do
+  let bs = LBS8.toStrict $ runPut $ B.put e
+      ln = LBS8.toStrict $ runPut $ putWord32be $ (fromIntegral $ length bs) + 4
+  hPut h ln  -- Size of entry, including the 4 bytes of size itself
+  hPut h bs  -- payload
 
 handleCommand :: Node -> Command Value -> IO Node
 handleCommand s c = case c of
@@ -64,7 +77,7 @@ handleCommand s c = case c of
     CLogEntries es -> do
         putStrLn $ "Log entries: " ++ show es
         let l = nodeLog s
-        foldM _insertEntry l es
+        forM es (insertEntry l)
         return s
     CSetCommitIndex i' -> do
         let i = nodeCommitIndex s
@@ -88,7 +101,7 @@ data Node = Node { nodeId             :: NodeId
                  , nodeHeartbeatTimer :: Timer
                  , nodeInput          :: Queue (Event Value)
                  , nodeCommandHandler :: CommandHandler Value
-                 , nodeLog            :: Log Value
+                 , nodeLog            :: FileLog
                  , nodeCommitIndex    :: Index
                  }
 
@@ -96,7 +109,7 @@ data Node = Node { nodeId             :: NodeId
 newtype NodeServer a = NodeServer { runServer :: StateT Node IO a }
                      deriving (Functor, Applicative, Monad, MonadState Node, MonadIO)
 
-newNode :: NodeId -> CommandHandler Value -> Log Value -> IO Node
+newNode :: NodeId -> CommandHandler Value -> FileLog -> IO Node
 newNode nid handler log = do
   electionTimer <- newTimer
   heartbeatTimer <- newTimer
@@ -134,17 +147,8 @@ instance MonadCommand NodeServer where
 -- | Main loop for running a Raft Node.
 run :: (MonadCommand m) => Config -> SomeState -> m ()
 run config state = do
-
-    traceS "Awaiting event"
     event <- pollEvent
-    traceS $ "Got event: " ++ show (event :: Event Value)
-
-    traceS $ "Input state: " ++ show state
-    (state', commands) <- handleEvent config state event --
-    traceS $ "Output state: " ++ show state'
-
+    (state', commands) <- handleEvent config state event
     interpretCommands commands
-
     run config state'
 
-      -- where
