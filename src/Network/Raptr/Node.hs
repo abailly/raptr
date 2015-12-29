@@ -23,14 +23,12 @@ import           Data.Kontiki.MemLog          (Log, runMemLog)
 import qualified Data.Map                     as Map
 import           Network.Kontiki.Raft         as Raft
 import           Network.Raptr.Client
+import           Network.Raptr.Types
 import           Network.URI                  (URI)
-import           Prelude                      hiding (length)
 import           System.IO                    (IOMode (AppendMode),
                                                withBinaryFile)
+import           System.IO.Storage
 import           System.Random                (randomRIO)
-
--- | An arbitrary opaque value that is stored in the logs.
-type Value = ByteString
 
 data NodeClient = NodeClient { clientNodeId   :: NodeId
                              , clientEndpoint :: URI
@@ -38,14 +36,6 @@ data NodeClient = NodeClient { clientNodeId   :: NodeId
 
 data CommandHandler a = CommandHandler { nodes :: Map.Map NodeId NodeClient }
 
-data FileLog = FileLog { logName :: FilePath }
-
-insertEntry :: FileLog -> Entry Value -> IO ()
-insertEntry FileLog{..} e = withBinaryFile logName AppendMode $ \ h -> do
-  let bs = LBS8.toStrict $ runPut $ B.put e
-      ln = LBS8.toStrict $ runPut $ putWord32be $ (fromIntegral $ length bs) + 4
-  hPut h ln  -- Size of entry, including the 4 bytes of size itself
-  hPut h bs  -- payload
 
 handleCommand :: Node -> Command Value -> IO Node
 handleCommand s c = case c of
