@@ -18,10 +18,13 @@ library
   exposed-modules:     Network.Raptr.Raptr
                      , Control.Concurrent.Queue
   other-modules:       Network.Raptr.Node
+                     , Network.Raptr.Client
+                     , Network.Raptr.Types
+                     , System.IO.Storage
                      , Control.Concurrent.Timer
   build-depends:       base >= 4.7 && < 5, mtl
                      , kontiki
-                     , http-conduit, wai, warp, network-uri
+                     , http-client, http-conduit, wai, warp, network-uri
                      , async, stm, random
                      , bytestring, containers, binary
   default-language:    Haskell2010
