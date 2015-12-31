@@ -27,12 +27,13 @@ server qVar req sendResponse = do
   withMVar qVar $ \ q -> do
     if [ "raptr" ] `isPrefixOf` pathInfo req  &&
        requestMethod req == "POST"
-      then do
-      let nodeid = encodeUtf8 $ pathInfo req !! 1
-      msg <- decode <$> lazyRequestBody req
-      let event = EMessage nodeid msg
-      atomically $ Q.put q  event
-      sendResponse $ responseLBS status200 [("Content-Type", "application/octet-stream")] (encode event)
+      then enqueueEvent q req sendResponse
       else sendResponse $ responseBuilder status400 [("Content-Type", "text/plain")] ""
 
-
+enqueueEvent :: Queue (Event Value) -> Application
+enqueueEvent q req sendResponse = do
+  let nodeid = encodeUtf8 $ pathInfo req !! 1
+  msg <- decode <$> lazyRequestBody req
+  let event = EMessage nodeid msg
+  atomically $ Q.put q  event
+  sendResponse $ responseLBS status200 [("Content-Type", "application/octet-stream")] (encode event)

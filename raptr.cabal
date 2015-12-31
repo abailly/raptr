@@ -26,6 +26,7 @@ library
   build-depends:       base >= 4.7 && < 5, mtl
                      , kontiki
                      , http-client, http-conduit, wai, warp, network-uri, http-types
+                     , network
                      , async, stm, random
                      , bytestring, containers, binary, aeson, text
   default-language:    Haskell2010
@@ -37,7 +38,7 @@ test-suite tests
   build-depends:       base
                      , raptr
                      , http-conduit
-                     , wai, warp
+                     , wai, warp, network-uri
                      , stm, mtl, binary
                      , tasty >= 0.7, tasty-hspec, hspec, hspec-wai
                      , QuickCheck
