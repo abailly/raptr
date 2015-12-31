@@ -19,14 +19,15 @@ library
                      , Control.Concurrent.Queue
   other-modules:       Network.Raptr.Node
                      , Network.Raptr.Client
+                     , Network.Raptr.Server
                      , Network.Raptr.Types
                      , System.IO.Storage
                      , Control.Concurrent.Timer
   build-depends:       base >= 4.7 && < 5, mtl
                      , kontiki
-                     , http-client, http-conduit, wai, warp, network-uri
+                     , http-client, http-conduit, wai, warp, network-uri, http-types
                      , async, stm, random
-                     , bytestring, containers, binary
+                     , bytestring, containers, binary, aeson, text
   default-language:    Haskell2010
 
 test-suite tests
