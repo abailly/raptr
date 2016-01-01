@@ -5,6 +5,7 @@ module Network.Raptr.ServerSpec where
 import           Control.Concurrent.MVar
 import           Control.Concurrent.Queue
 import           Control.Exception
+import           Control.Monad
 import           Data.Binary
 import           Network.Raptr.Raptr
 import           Network.URI
@@ -35,10 +36,15 @@ clientSpec = around startStopServer $ do
 serverSpec :: Spec
 serverSpec = with app $ do
 
+  let msg :: Message Value = MRequestVote $ RequestVote term0 "foo" index0 term0
+
   it "on POST /raptr/foo it enqueues event and returns it" $ do
-    let msg :: Message Value = MRequestVote $ RequestVote term0 "foo" index0 term0
-        ev = EMessage "foo" msg
+    let ev = EMessage "foo" msg
     post "/raptr/foo" (encode msg) `shouldRespondWith` ResponseMatcher { matchStatus = 200
                                                                        , matchHeaders = ["Content-Type" <:> "application/octet-stream"]
                                                                        , matchBody = Just $ encode ev }
 
+  it "on POST /raptr/foo it returns 503 if queue is full" $ do
+    replicateM 10 $ post "/raptr/foo" (encode msg)
+
+    post "/raptr/foo" (encode msg) `shouldRespondWith` 503

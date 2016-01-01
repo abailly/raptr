@@ -35,5 +35,7 @@ enqueueEvent q req sendResponse = do
   let nodeid = encodeUtf8 $ pathInfo req !! 1
   msg <- decode <$> lazyRequestBody req
   let event = EMessage nodeid msg
-  atomically $ Q.put q  event
-  sendResponse $ responseLBS status200 [("Content-Type", "application/octet-stream")] (encode event)
+  isQueued <- atomically $ Q.put q  event
+  if isQueued
+    then sendResponse $ responseLBS status200 [("Content-Type", "application/octet-stream")] (encode event)
+    else sendResponse $ responseLBS status503 [("Content-Type", "text/plain")] "cannot enqueue event because queue is full, try again later"
