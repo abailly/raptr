@@ -29,9 +29,8 @@ clientSpec = around startStopServer $ do
   it "can send message from client to server" $ \ srv -> do
     let p = raptrPort srv
         Just uri = parseURI $ "http://localhost:" ++ show p ++"/raptr/bar"
-        client = NodeClient "foo" uri
         msg :: Message Value = MRequestVote $ RequestVote term0 "foo" index0 term0
-    sendClient msg client -- expect no exception
+    sendClient msg uri -- expect no exception
 
 serverSpec :: Spec
 serverSpec = with app $ do

@@ -15,16 +15,12 @@ import           Network.Kontiki.Raft
 import           Network.Raptr.Types
 import           Network.URI
 
-data NodeClient = NodeClient { clientNodeId   :: NodeId
-                             , clientEndpoint :: URI
-                             }
-
 type RaptrNodes = Map.Map NodeId URI
 
 emptyNodes :: RaptrNodes
 emptyNodes = Map.empty
 
-data Client a = Client { nodes :: Map.Map NodeId NodeClient }
+data Client a = Client { nodes :: RaptrNodes }
 
 doBroadcast :: Client Value -> Message Value -> IO ()
 doBroadcast c@Client{..} message =
@@ -36,11 +32,11 @@ doSend Client{..} node message =
    Nothing     -> return ()  -- TODO warning? cleanup com?
    Just client  -> sendClient message client
 
-sendClient :: Message Value -> NodeClient -> IO ()
-sendClient message NodeClient{..} =  do
+sendClient :: Message Value -> URI -> IO ()
+sendClient message uri =  do
   manager <- newManager defaultManagerSettings
 
-  request <- parseUrl (uriToString id clientEndpoint $ "")
+  request <- parseUrl (uriToString id uri "")
   let req = request { checkStatus = \ s h ck -> Nothing
                     , method = "POST"
                     , requestBody = RequestBodyLBS $ runPut $ B.put message }

@@ -1,6 +1,8 @@
 {-# LANGUAGE RecordWildCards #-}
 module System.IO.Storage where
 
+import           Control.Exception          (throw)
+import           Control.Monad              (when)
 import qualified Data.Binary                as B
 import           Data.Binary.Get
 import           Data.Binary.Put            (putWord32be, runPut)
@@ -9,9 +11,33 @@ import qualified Data.ByteString.Lazy.Char8 as LBS8
 import           Network.Kontiki.Raft       as Raft
 import           Network.Raptr.Types
 import           Prelude                    hiding (length)
-import           System.IO                  (IOMode (..), withBinaryFile)
+import           System.Directory           (doesDirectoryExist, doesFileExist)
+import           System.IO                  (IOMode (..), hClose, hFlush,
+                                             openBinaryFile, withBinaryFile)
 
 data FileLog = FileLog { logName :: FilePath }
+
+magic :: B.Word32
+magic = 0x12345678
+
+skipMagic :: Get ()
+skipMagic = do
+  mag <- getWord32be
+  if mag /= magic
+    then fail "incorrect file format, cannot read magic marker at beginning of file"
+    else return ()
+
+createLog :: FilePath -> IO FileLog
+createLog path = do
+  exist <- doesFileExist path
+  isdir <- doesDirectoryExist path
+  when isdir $ throw $ userError ("log file " ++ path ++ " is a directory")
+  when (not exist) $ do  -- attempt to create file if it does not exist
+    h <- openBinaryFile path WriteMode
+    hPut h $ LBS8.toStrict $ runPut $ putWord32be magic
+    hFlush h
+    hClose h
+  return $ FileLog path
 
 insertEntry :: FileLog -> Entry Value -> IO ()
 insertEntry FileLog{..} e = withBinaryFile logName AppendMode $ \ h -> do
@@ -35,8 +61,9 @@ getEntryAt idx = do
 getEntry :: FileLog -> Index -> IO (Maybe (Entry Value))
 getEntry FileLog{..} idx =  withBinaryFile logName ReadMode $ \ h -> do
   bs <- LBS8.hGetContents h
-
-  return $ runGet (getEntryAt $ unIndex idx) bs
+  let e = runGet (skipMagic >> getEntryAt (unIndex idx)) bs
+  putStrLn $ "entry at index "++ show idx ++ " in log " ++ logName ++ ": "++ show e
+  return e
 
 getLastEntryFromFile ::  Maybe (Entry Value) -> Get (Maybe (Entry Value))
 getLastEntryFromFile last = do
@@ -52,4 +79,6 @@ getLastEntryFromFile last = do
 getLastEntry :: FileLog -> IO (Maybe (Entry Value))
 getLastEntry FileLog{..} =  withBinaryFile logName ReadMode $ \ h -> do
   bs <- LBS8.hGetContents h
-  return $ runGet (getLastEntryFromFile Nothing) bs
+  let e = runGet (skipMagic >> getLastEntryFromFile Nothing) bs
+  putStrLn $ "last entry in log " ++ logName ++ ": "++ show e
+  return e

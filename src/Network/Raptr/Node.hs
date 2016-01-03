@@ -95,13 +95,16 @@ data Node = Node { nodeId             :: NodeId
 newtype NodeServer a = NodeServer { runServer :: StateT Node IO a }
                      deriving (Functor, Applicative, Monad, MonadState Node, MonadIO)
 
-newNode :: NodeId -> Client Value -> FileLog -> IO Node
-newNode nid handler log = do
+newNode :: Maybe (Queue (Event Value)) -> Config -> Client Value -> FileLog -> IO Node
+newNode maybeQ config handler log = do
   electionTimer <- newTimer
   heartbeatTimer <- newTimer
-  q <- newQueueIO 100
+  q <- maybe (newQueueIO 100) return maybeQ
 
-  return $  Node { nodeId = nid
+  start electionTimer (_configElectionTimeout config)
+  start heartbeatTimer (_configHeartbeatTimeout config)
+
+  return $  Node { nodeId = _configNodeId config
                  , nodeElectionTimer =  electionTimer
                  , nodeHeartbeatTimer = heartbeatTimer
                  , nodeInput = q
@@ -120,21 +123,26 @@ class (MonadIO m, MonadState Node m) => MonadCommand m where
 
 instance MonadLog NodeServer Value where
   logEntry :: Index -> NodeServer (Maybe (Entry Value))
-  logEntry idx = get >>= \ Node{..} -> liftIO (getEntry nodeLog idx)
+  logEntry idx = traceS ("get log entry at index " ++ show idx) >>
+                 get >>= \ Node{..} -> liftIO (getEntry nodeLog idx)
 
   logLastEntry :: NodeServer (Maybe (Entry Value))
-  logLastEntry = get >>= \ Node{..} -> liftIO (getLastEntry nodeLog)
+  logLastEntry = traceS ("get last log entry") >>
+                 get >>= \ Node{..} -> liftIO (getLastEntry nodeLog)
 
 instance MonadCommand NodeServer where
 
-  pollEvent = get >>= \ Node{..} -> liftIO $ atomically $ do
-    (const EElectionTimeout `fmap` Timer.awaitSTM nodeElectionTimer)
-      `orElse` (const EHeartbeatTimeout `fmap` Timer.awaitSTM nodeHeartbeatTimer)
-      `orElse` Q.read nodeInput
+  pollEvent = traceS "polling event" >>
+              get >>= \ Node{..} -> liftIO $ atomically $ do
+                (const EElectionTimeout `fmap` Timer.awaitSTM nodeElectionTimer)
+                  `orElse` (const EHeartbeatTimeout `fmap` Timer.awaitSTM nodeHeartbeatTimer)
+                  `orElse` Q.read nodeInput
 
-  handleEvent config state event = get >>= \ Node{..} -> Raft.handle config state event
+  handleEvent config state event = traceS (show (_configNodeId config) ++ ", handling event " ++ show event ++ ", state: "++ show state) >>
+                                   get >>= \ Node{..} -> Raft.handle config state event
 
-  interpretCommands commands = get >>= flip handleCommands commands >>= State.put
+  interpretCommands commands = traceS ("interpreting commands " ++ show commands) >>
+                               get >>= flip handleCommands commands >>= State.put
 
 
 -- | Main loop for running a Raft Node.

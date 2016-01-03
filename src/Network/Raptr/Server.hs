@@ -32,10 +32,12 @@ server qVar req sendResponse = do
 
 enqueueEvent :: Queue (Event Value) -> Application
 enqueueEvent q req sendResponse = do
+  putStrLn $ "server got request: " ++ show req
   let nodeid = encodeUtf8 $ pathInfo req !! 1
   msg <- decode <$> lazyRequestBody req
   let event = EMessage nodeid msg
   isQueued <- atomically $ Q.put q  event
+
   if isQueued
-    then sendResponse $ responseLBS status200 [("Content-Type", "application/octet-stream")] (encode event)
+    then putStrLn ("server enqueued event " ++ show event) >> sendResponse (responseLBS status200 [("Content-Type", "application/octet-stream")] (encode event))
     else sendResponse $ responseLBS status503 [("Content-Type", "text/plain")] "cannot enqueue event because queue is full, try again later"

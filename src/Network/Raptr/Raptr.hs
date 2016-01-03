@@ -7,29 +7,34 @@
 module Network.Raptr.Raptr
        (module Network.Raptr.Server,
         module Network.Raptr.Types,
+        module Network.Raptr.Node,
         module Network.Kontiki.Raft,
         module Network.Raptr.Client,
         -- * Types
         Raptr(..),
         -- * Configuration
-        defaultConfig,
+        defaultConfig, localCluster, FileLog(..), createLog,
         -- * Control Server
         start,stop) where
 
 import           Control.Concurrent.Async
-import           Data.ByteString.Char8    (pack)
+import           Data.ByteString.Char8    (pack, unpack)
 import qualified Data.Map                 as Map
 import           Data.Maybe               (catMaybes, fromJust)
 import           Data.Monoid              ((<>))
 import qualified Data.Set                 as Set
+import           Debug.Trace
 import           Network.Kontiki.Raft
 import           Network.Raptr.Client
+import           Network.Raptr.Node
 import           Network.Raptr.Server
 import           Network.Raptr.Types
 import           Network.Socket
-import           Network.URI              (parseURI, uriAuthority, uriPort)
+import           Network.URI              (nullURI, parseURI, parseURIReference,
+                                           relativeTo, uriAuthority, uriPort)
 import           Network.Wai
-import           Network.Wai.Handler.Warp hiding (cancel)
+import           Network.Wai.Handler.Warp as W hiding (cancel)
+import           System.IO.Storage
 import           System.Random
 
 data Raptr = Raptr { raptrPort   :: Port
@@ -38,6 +43,7 @@ data Raptr = Raptr { raptrPort   :: Port
                    , raftConfig  :: Config
                      -- ^Raft cluster configuration, including this node's own id and other nodes ids
                    , raptrNodes  :: RaptrNodes
+                     -- ^Map of nodes in the cluster, from @NodeId@ to @URI@
                    , raptrThread :: Maybe (Async ())
                      -- ^Thread for HTTP server
                    , nodeThread  :: Maybe (Async ())
@@ -57,17 +63,18 @@ instance Show Raptr where
 defaultRaftConfig :: Config
 defaultRaftConfig = Config { _configNodeId = "unknown"
                            , _configNodes = Set.empty
-                           , _configElectionTimeout = 10000 * 1000
+                           , _configElectionTimeout = 5000 * 1000
                            , _configHeartbeatTimeout = 5000 * 1000
                            }
 
 localCluster :: Int -> [ Raptr ]
 localCluster numNodes = let nodeNames = take numNodes $ map (pack . ("node" <>) . show) [1 ..]
                             confs = map (\ nid -> defaultRaftConfig { _configNodeId = nid, _configNodes = Set.fromList nodeNames }) nodeNames
-                            nodes = Map.fromList $ zip nodeNames (catMaybes $ map (parseURI . ("http://localhost:" ++) . show) [ 30700 .. ])
-                        in map (\ c -> Raptr { raptrPort = (read . uriPort . fromJust) $ uriAuthority =<<  Map.lookup (_configNodeId c) nodes
+                            nodes = Map.fromList $ zip nodeNames (catMaybes $ map (parseURI . (\ p -> "http://localhost:" ++ p ++ "/raptr/") . show) [ 30700 .. ])
+                            asURI bs = maybe nullURI id (parseURIReference $ unpack bs)
+                        in map (\ c -> Raptr { raptrPort = (read . drop 1 . uriPort . fromJust) $ uriAuthority =<< Map.lookup (_configNodeId c) nodes
                                              , raftConfig = c
-                                             , raptrNodes = nodes
+                                             , raptrNodes = Map.map ( \ uri -> asURI (_configNodeId c) `relativeTo` uri) nodes
                                              , raptrThread = Nothing , nodeThread = Nothing
                                              }) confs
 
@@ -78,13 +85,13 @@ start r@Raptr{..} app = do
   let p = raptrPort
   raptr <- if p == 0
            then startOnRandomPort
-           else async (run p app) >>= \ tid -> return r { raptrThread = Just tid }
+           else async (W.run p app) >>= \ tid -> return r { raptrThread = Just tid }
   putStrLn $ "starting raptr server " ++ show raptr
   return raptr
     where
       startOnRandomPort = do
         sock <- openSocket
-        a <- async $ runSettingsSocket defaultSettings sock app
+        a <- async $ W.runSettingsSocket defaultSettings sock app
         port <- socketPort sock
         return r { raptrPort = fromIntegral port, raptrThread = Just a }
 
