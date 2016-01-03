@@ -19,7 +19,7 @@ module Network.Raptr.Raptr
 import           Control.Concurrent.Async
 import           Data.ByteString.Char8    (pack)
 import qualified Data.Map                 as Map
-import           Data.Maybe               (catMaybes)
+import           Data.Maybe               (catMaybes, fromJust)
 import           Data.Monoid              ((<>))
 import qualified Data.Set                 as Set
 import           Network.Kontiki.Raft
@@ -27,7 +27,7 @@ import           Network.Raptr.Client
 import           Network.Raptr.Server
 import           Network.Raptr.Types
 import           Network.Socket
-import           Network.URI              (parseURI)
+import           Network.URI              (parseURI, uriAuthority, uriPort)
 import           Network.Wai
 import           Network.Wai.Handler.Warp hiding (cancel)
 import           System.Random
@@ -61,11 +61,15 @@ defaultRaftConfig = Config { _configNodeId = "unknown"
                            , _configHeartbeatTimeout = 5000 * 1000
                            }
 
-cluster :: Int -> (RaptrNodes, Config)
-cluster numNodes = let nodeNames = take numNodes $ map (pack . ("node" <>) . show) [1 ..]
-                       conf = defaultRaftConfig { _configNodes = Set.fromList nodeNames }
-                       nodes = Map.fromList $ zip nodeNames (catMaybes $ map (parseURI . ("http://localhost:" ++) . show) [ 30700 .. ])
-                   in (nodes, conf)
+localCluster :: Int -> [ Raptr ]
+localCluster numNodes = let nodeNames = take numNodes $ map (pack . ("node" <>) . show) [1 ..]
+                            confs = map (\ nid -> defaultRaftConfig { _configNodeId = nid, _configNodes = Set.fromList nodeNames }) nodeNames
+                            nodes = Map.fromList $ zip nodeNames (catMaybes $ map (parseURI . ("http://localhost:" ++) . show) [ 30700 .. ])
+                        in map (\ c -> Raptr { raptrPort = (read . uriPort . fromJust) $ uriAuthority =<<  Map.lookup (_configNodeId c) nodes
+                                             , raftConfig = c
+                                             , raptrNodes = nodes
+                                             , raptrThread = Nothing , nodeThread = Nothing
+                                             }) confs
 
 defaultConfig = Raptr 0 defaultRaftConfig emptyNodes Nothing Nothing
 
@@ -96,7 +100,6 @@ openSocket  = do
   bind sock (SockAddrInet (fromInteger 0) iNADDR_ANY)
   listen sock 5
   return sock
-
 
 runRaptr :: IO Bool
 runRaptr = return False
