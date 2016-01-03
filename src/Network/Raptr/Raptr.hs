@@ -67,16 +67,18 @@ defaultRaftConfig = Config { _configNodeId = "unknown"
                            , _configHeartbeatTimeout = 5000 * 1000
                            }
 
-localCluster :: Int -> [ Raptr ]
+localCluster :: Int -> IO [ Raptr ]
 localCluster numNodes = let nodeNames = take numNodes $ map (pack . ("node" <>) . show) [1 ..]
                             confs = map (\ nid -> defaultRaftConfig { _configNodeId = nid, _configNodes = Set.fromList nodeNames }) nodeNames
                             nodes = Map.fromList $ zip nodeNames (catMaybes $ map (parseURI . (\ p -> "http://localhost:" ++ p ++ "/raptr/") . show) [ 30700 .. ])
                             asURI bs = maybe nullURI id (parseURIReference $ unpack bs)
-                        in map (\ c -> Raptr { raptrPort = (read . drop 1 . uriPort . fromJust) $ uriAuthority =<< Map.lookup (_configNodeId c) nodes
-                                             , raftConfig = c
-                                             , raptrNodes = Map.map ( \ uri -> asURI (_configNodeId c) `relativeTo` uri) nodes
-                                             , raptrThread = Nothing , nodeThread = Nothing
-                                             }) confs
+                        in mapM (\ c -> do
+                                    t <- randomRIO (3000 * 1000, 7000 * 1000)
+                                    return $ Raptr { raptrPort = (read . drop 1 . uriPort . fromJust) $ uriAuthority =<< Map.lookup (_configNodeId c) nodes
+                                                   , raftConfig = c { _configElectionTimeout = t }
+                                                   , raptrNodes = Map.map ( \ uri -> asURI (_configNodeId c) `relativeTo` uri) nodes
+                                                   , raptrThread = Nothing , nodeThread = Nothing
+                                                   }) confs
 
 defaultConfig = Raptr 0 defaultRaftConfig emptyNodes Nothing Nothing
 

@@ -33,7 +33,7 @@ startServer r@Raptr{..} = do
 raptrSpec = do
 
   it "runs a 3 node cluster" $ do
-    let cluster = localCluster 3
+    cluster <- localCluster 3
 
     servers <- forM cluster startServer
     threadDelay $ 10 * 1000 * 1000
