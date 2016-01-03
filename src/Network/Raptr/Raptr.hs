@@ -17,16 +17,20 @@ module Network.Raptr.Raptr
         start,stop) where
 
 import           Control.Concurrent.Async
-import           Data.Set                 as Set
+import           Data.ByteString.Char8    (pack)
+import qualified Data.Map                 as Map
+import           Data.Maybe               (catMaybes)
+import           Data.Monoid              ((<>))
+import qualified Data.Set                 as Set
 import           Network.Kontiki.Raft
 import           Network.Raptr.Client
 import           Network.Raptr.Server
 import           Network.Raptr.Types
 import           Network.Socket
+import           Network.URI              (parseURI)
 import           Network.Wai
 import           Network.Wai.Handler.Warp hiding (cancel)
 import           System.Random
-
 
 data Raptr = Raptr { raptrPort   :: Port
                      -- ^Port this Raptr instance is listening on. May be set initially to 0 in which case
@@ -44,6 +48,10 @@ instance Show Raptr where
   showsPrec p Raptr{..} = showParen (p >= 11) $
                           showString "Raptr { raptrPort = "
                           . showsPrec 11 raptrPort
+                          . showString ", raftConfig = "
+                          . showsPrec 11  raftConfig
+                          . showString ", raptrNodes = "
+                          . showsPrec 11  raptrNodes
                           . showString "}"
 
 defaultRaftConfig :: Config
@@ -52,6 +60,12 @@ defaultRaftConfig = Config { _configNodeId = "unknown"
                            , _configElectionTimeout = 10000 * 1000
                            , _configHeartbeatTimeout = 5000 * 1000
                            }
+
+cluster :: Int -> (RaptrNodes, Config)
+cluster numNodes = let nodeNames = take numNodes $ map (pack . ("node" <>) . show) [1 ..]
+                       conf = defaultRaftConfig { _configNodes = Set.fromList nodeNames }
+                       nodes = Map.fromList $ zip nodeNames (catMaybes $ map (parseURI . ("http://localhost:" ++) . show) [ 30700 .. ])
+                   in (nodes, conf)
 
 defaultConfig = Raptr 0 defaultRaftConfig emptyNodes Nothing Nothing
 

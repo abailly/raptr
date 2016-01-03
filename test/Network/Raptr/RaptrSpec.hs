@@ -7,6 +7,7 @@ import           Test.Tasty.Hspec
 raptrSpec = do
 
   it "runs a 3 node cluster" $ do
+    let clusterConfig = cluster 3
     result <- runRaptr
     result `shouldBe` True
 
