@@ -20,7 +20,7 @@ app = do
   return $ server mvar
 
 startStopServer action = bracket
-                         (newQueueIO 10 >>= newMVar >>= start defaultConfig . server)
+                         (app >>= start defaultConfig)
                          stop
                          action
 clientSpec :: Spec

@@ -1,3 +1,6 @@
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE ViewPatterns      #-}
 -- | Core module for Raptr library.
 --
 -- Import this module to instantiate a @Raptr@ node member of a cluster communicating over HTTP.
@@ -14,6 +17,7 @@ module Network.Raptr.Raptr
         start,stop) where
 
 import           Control.Concurrent.Async
+import           Data.Set                 as Set
 import           Network.Kontiki.Raft
 import           Network.Raptr.Client
 import           Network.Raptr.Server
@@ -23,28 +27,53 @@ import           Network.Wai
 import           Network.Wai.Handler.Warp hiding (cancel)
 import           System.Random
 
+
 data Raptr = Raptr { raptrPort   :: Port
+                     -- ^Port this Raptr instance is listening on. May be set initially to 0 in which case
+                     -- @start@ will allocate a new port
+                   , raftConfig  :: Config
+                     -- ^Raft cluster configuration, including this node's own id and other nodes ids
+                   , raptrNodes  :: RaptrNodes
                    , raptrThread :: Maybe (Async ())
+                     -- ^Thread for HTTP server
+                   , nodeThread  :: Maybe (Async ())
+                     -- ^Thread for Raft Node proper
                    }
 
-defaultConfig = Raptr 0 Nothing
+instance Show Raptr where
+  showsPrec p Raptr{..} = showParen (p >= 11) $
+                          showString "Raptr { raptrPort = "
+                          . showsPrec 11 raptrPort
+                          . showString "}"
+
+defaultRaftConfig :: Config
+defaultRaftConfig = Config { _configNodeId = "unknown"
+                           , _configNodes = Set.empty
+                           , _configElectionTimeout = 10000 * 1000
+                           , _configHeartbeatTimeout = 5000 * 1000
+                           }
+
+defaultConfig = Raptr 0 defaultRaftConfig emptyNodes Nothing Nothing
 
 start :: Raptr -> Application -> IO Raptr
-start config app = do
-  let p = raptrPort config
+start r@Raptr{..} app = do
+  let p = raptrPort
   raptr <- if p == 0
-    then do
-    sock <- openSocket
-    a <- async $ runSettingsSocket defaultSettings sock app
-    port <- socketPort sock
-    return $ config { raptrPort = fromIntegral port, raptrThread = Just a }
-    else async (run p app) >>= \ tid -> return config { raptrThread = Just tid }
-  putStrLn $ "starting raptr server on port " ++ show (raptrPort raptr)
+           then startOnRandomPort
+           else async (run p app) >>= \ tid -> return r { raptrThread = Just tid }
+  putStrLn $ "starting raptr server " ++ show raptr
   return raptr
+    where
+      startOnRandomPort = do
+        sock <- openSocket
+        a <- async $ runSettingsSocket defaultSettings sock app
+        port <- socketPort sock
+        return r { raptrPort = fromIntegral port, raptrThread = Just a }
+
 
 stop :: Raptr -> IO ()
-stop (Raptr _ Nothing)    = return ()
-stop (Raptr p (Just tid)) =   putStrLn ("stopping raptr server on port " ++ show p) >> cancel tid
+stop (raptrThread -> Nothing)      = return ()
+stop r@(raptrThread -> (Just tid)) = putStrLn ("stopping raptr server on port " ++ show (raptrPort r)) >> cancel tid
 
 openSocket :: IO Socket
 openSocket  = do

@@ -19,14 +19,19 @@ data NodeClient = NodeClient { clientNodeId   :: NodeId
                              , clientEndpoint :: URI
                              }
 
-data Communicator a = Communicator { nodes :: Map.Map NodeId NodeClient }
+type RaptrNodes = Map.Map NodeId URI
 
-doBroadcast :: Communicator Value -> Message Value -> IO ()
-doBroadcast c@Communicator{..} message =
+emptyNodes :: RaptrNodes
+emptyNodes = Map.empty
+
+data Client a = Client { nodes :: Map.Map NodeId NodeClient }
+
+doBroadcast :: Client Value -> Message Value -> IO ()
+doBroadcast c@Client{..} message =
   forM_ (Map.elems nodes) (sendClient message)
 
-doSend :: Communicator Value -> NodeId ->  Message Value -> IO ()
-doSend Communicator{..} node message =
+doSend :: Client Value -> NodeId ->  Message Value -> IO ()
+doSend Client{..} node message =
   case Map.lookup node nodes of
    Nothing     -> return ()  -- TODO warning? cleanup com?
    Just client  -> sendClient message client

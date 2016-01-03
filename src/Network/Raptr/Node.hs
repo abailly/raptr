@@ -33,41 +33,41 @@ import           System.IO.Storage
 import           System.Random                (randomRIO)
 
 
-handleCommand :: Node -> Command Value -> IO Node
+handleCommand :: (MonadCommand m) => Node -> Command Value -> m Node
 handleCommand s c = case c of
     CBroadcast m -> do
-        putStrLn $ "CBroadcast: " ++ show m
-        doBroadcast (nodeCommunicator s) m
+        traceS $ "CBroadcast: " ++ show m
+        liftIO $ doBroadcast (nodeClient s) m
         return s
     CSend n m -> do
-        putStrLn $ "CSend: " ++ show n ++ " -> " ++ show m
-        doSend (nodeCommunicator s) n m
+        traceS $ "CSend: " ++ show n ++ " -> " ++ show m
+        liftIO $ doSend (nodeClient s) n m
         return s
     CResetElectionTimeout a b -> do
-        t <- randomRIO (a, b)
-        putStrLn $ "Reset election timeout: " ++ show t
-        Timer.reset (nodeElectionTimer s) t
+        t <- liftIO $ randomRIO (a, b)
+        traceS $ "Reset election timeout: " ++ show t
+        liftIO $ Timer.reset (nodeElectionTimer s) t
         return s
     CResetHeartbeatTimeout a -> do
-        putStrLn $ "Reset heartbeat timeout: " ++ show a
-        Timer.reset (nodeHeartbeatTimer s) a
+        traceS $ "Reset heartbeat timeout: " ++ show a
+        liftIO $ Timer.reset (nodeHeartbeatTimer s) a
         return s
     CLog b -> do
         let m = LBS8.unpack $ Builder.toLazyByteString b
-        putStrLn $ "Log: " ++ m
+        traceS $ "Log: " ++ m
         return s
     CTruncateLog i -> do
-        putStrLn $ "Truncate: " ++ show i
-        -- TODO
+        traceS $ "Truncate: " ++ show i
+        fail "not implemented"
         return s
     CLogEntries es -> do
-        putStrLn $ "Log entries: " ++ show es
+        traceS $ "Log entries: " ++ show es
         let l = nodeLog s
-        forM es (insertEntry l)
+        forM es (liftIO . insertEntry l)
         return s
     CSetCommitIndex i' -> do
         let i = nodeCommitIndex s
-        putStrLn $ "New commit index, to commit: " ++ entriesToCommit i i'
+        traceS $ "New commit index, to commit: " ++ entriesToCommit i i'
         return $ s { nodeCommitIndex = i' }
 
 entriesToCommit :: Index -> Index -> String
@@ -79,14 +79,14 @@ entriesToCommit prev new =
   where
     next = succIndex prev
 
-handleCommands :: Node -> [Command Value] -> IO Node
+handleCommands :: (MonadCommand m) => Node -> [Command Value] -> m Node
 handleCommands = foldM handleCommand
 
 data Node = Node { nodeId             :: NodeId
                  , nodeElectionTimer  :: Timer
                  , nodeHeartbeatTimer :: Timer
                  , nodeInput          :: Queue (Event Value)
-                 , nodeCommunicator   :: Communicator Value
+                 , nodeClient         :: Client Value
                  , nodeLog            :: FileLog
                  , nodeCommitIndex    :: Index
                  }
@@ -95,7 +95,7 @@ data Node = Node { nodeId             :: NodeId
 newtype NodeServer a = NodeServer { runServer :: StateT Node IO a }
                      deriving (Functor, Applicative, Monad, MonadState Node, MonadIO)
 
-newNode :: NodeId -> Communicator Value -> FileLog -> IO Node
+newNode :: NodeId -> Client Value -> FileLog -> IO Node
 newNode nid handler log = do
   electionTimer <- newTimer
   heartbeatTimer <- newTimer
@@ -105,7 +105,7 @@ newNode nid handler log = do
                  , nodeElectionTimer =  electionTimer
                  , nodeHeartbeatTimer = heartbeatTimer
                  , nodeInput = q
-                 , nodeCommunicator = handler
+                 , nodeClient = handler
                  , nodeLog = log
                  , nodeCommitIndex = index0
                  }
@@ -134,7 +134,7 @@ instance MonadCommand NodeServer where
 
   handleEvent config state event = get >>= \ Node{..} -> Raft.handle config state event
 
-  interpretCommands commands = get >>= liftIO . flip handleCommands commands >>= State.put
+  interpretCommands commands = get >>= flip handleCommands commands >>= State.put
 
 
 -- | Main loop for running a Raft Node.
