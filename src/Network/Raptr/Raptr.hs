@@ -13,7 +13,7 @@ module Network.Raptr.Raptr
         -- * Types
         Raptr(..),
         -- * Configuration
-        defaultConfig, localCluster, FileLog(..), openLog,
+        defaultConfig, defaultRaftConfig, localCluster, FileLog(..), openLog,
         -- * Control Server
         start,stop) where
 
@@ -63,8 +63,8 @@ instance Show Raptr where
 defaultRaftConfig :: Config
 defaultRaftConfig = Config { _configNodeId = "unknown"
                            , _configNodes = Set.empty
-                           , _configElectionTimeout = 5000 * 1000
-                           , _configHeartbeatTimeout = 5000 * 1000
+                           , _configElectionTimeout = 4000 * 1000
+                           , _configHeartbeatTimeout = 2000 * 1000
                            }
 
 localCluster :: Int -> IO [ Raptr ]

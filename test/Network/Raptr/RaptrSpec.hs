@@ -27,17 +27,18 @@ startServer r@Raptr{..} = do
   putStrLn $ "starting raptr " ++ show r
   q <- newQueueIO 10
   m <- newMVar q
-  let app = server m
-      nodeid = _configNodeId raftConfig
+  let nodeid = _configNodeId raftConfig
   log <- openLog $ unpack nodeid <.> "log"
   node <- newNode (Just q) raftConfig  (Client raptrNodes) log
   nodethread <- async $ runReaderT (runServer (run raftConfig initialState)) node
-  start (r { nodeThread = Just nodethread }) app
+  start (r { nodeThread = Just nodethread }) (server node)
 
 raptrSpec = do
 
   it "runs a 3 node cluster" $ do
     servers <- localCluster 3 >>= mapM startServer
+
+    threadDelay $ 10 * 1000 * 1000
 
     manager <- newManager defaultManagerSettings
     request <- parseUrl "http://localhost:30700/raptr/"
@@ -45,6 +46,8 @@ raptrSpec = do
                       , method = "PUT"
                       , requestBody = RequestBodyLBS "1234567890" }
     response <- httpLbs req manager
+
+    threadDelay $ 10 * 1000 * 1000
 
     forM_ servers stop
 

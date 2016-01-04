@@ -1,10 +1,12 @@
 {-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE InstanceSigs               #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE MultiWayIf                 #-}
 {-# LANGUAGE RankNTypes                 #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TypeSynonymInstances       #-}
 -- | Defines the structure and behavior of a Raft Node, using Kontiki as model
 -- implementation of Raft consensus algorithm.
@@ -12,14 +14,18 @@ module Network.Raptr.Node where
 
 import           Control.Concurrent.Queue     as Q
 import           Control.Concurrent.STM       (TVar, atomically, newTVarIO,
-                                               orElse, swapTVar)
+                                               orElse, readTVar, swapTVar)
 import           Control.Concurrent.Timer     as Timer
+import           Control.Exception            (IOException, catch)
+import           Control.Lens                 ((^.))
 import           Control.Monad                (foldM, forM_)
 import           Control.Monad.Reader         as Read
 import           Control.Monad.Trans          (MonadIO, liftIO)
 import qualified Data.Binary                  as B
 import           Data.Binary.Put              (putWord32be, runPut)
-import           Data.ByteString              (ByteString, hPut, length)
+import           Data.ByteString              (ByteString, hPut)
+import qualified Data.ByteString              as BS
+import qualified Data.ByteString.Char8        as BS8
 import qualified Data.ByteString.Lazy.Builder as Builder
 import qualified Data.ByteString.Lazy.Char8   as LBS8
 import           Data.Kontiki.MemLog          (Log, runMemLog)
@@ -81,6 +87,7 @@ data Node = Node { nodeId             :: NodeId
                  , nodeInput          :: Queue (Event Value)
                  , nodeClient         :: Client Value
                  , nodeLog            :: FileLog
+                 , nodeState          :: TVar SomeState
                  , nodeCommitIndex    :: TVar Index
                  }
 
@@ -92,8 +99,9 @@ newNode :: Maybe (Queue (Event Value)) -> Config -> Client Value -> FileLog -> I
 newNode maybeQ config handler log = do
   electionTimer <- newTimer
   heartbeatTimer <- newTimer
-  q <- maybe (newQueueIO 100) return maybeQ
+  q <- maybe (newQueueIO 10) return maybeQ
   idx <- newTVarIO index0
+  st <- newTVarIO Raft.initialState
   start electionTimer (_configElectionTimeout config)
   start heartbeatTimer (_configHeartbeatTimeout config)
 
@@ -103,6 +111,7 @@ newNode maybeQ config handler log = do
                  , nodeInput = q
                  , nodeClient = handler
                  , nodeLog = log
+                 , nodeState = st
                  , nodeCommitIndex = idx
                  }
 
@@ -111,8 +120,20 @@ class (MonadIO m, MonadReader Node m) => MonadCommand m where
   handleEvent :: Config -> SomeState -> Event Value -> m (SomeState, [Command Value])
   interpretCommands :: [Command Value] -> m ()
 
+  -- | Update Raft protocol state of this node.
+  --
+  -- returns previous state
+  updateState :: SomeState -> m SomeState
+  storeEntry :: ByteString -> m (StoreEntryResult Value)
+
   traceS :: String -> m ()
   traceS = liftIO . putStrLn
+
+data StoreEntryResult a = StoredEntry (Entry a)
+                        | NotLeader NodeId URI
+                        | TryAgainLater
+                        | ErrorStoringEntry String
+                        deriving (Eq, Show)
 
 instance MonadLog NodeServer Value where
   logEntry :: Index -> NodeServer (Maybe (Entry Value))
@@ -137,12 +158,34 @@ instance MonadCommand NodeServer where
   interpretCommands commands = traceS ("interpreting commands " ++ show commands) >>
                                ask >>= flip handleCommands commands
 
+  updateState st = traceS ("updating state to " ++ show st) >>
+                   ask >>= \ Node{..} -> liftIO $ atomically $ swapTVar nodeState st
+
+  storeEntry bs = traceS ("storing new entry of length " ++ show (BS.length bs)) >>
+                  ask >>= \ Node{..} -> do
+                    e <- logLastEntry
+                    let lastIndex = maybe index0 eIndex e
+                        lastTerm = maybe term0 eTerm e
+                        entry = Entry (succIndex lastIndex) lastTerm bs
+                    do
+                      st <- liftIO $ atomically $ readTVar nodeState
+                      case st of
+                        WrapState(Follower s') -> return $ case s' ^. fLastKnownLeader of
+                                                            Just leaderid -> case locateNode nodeClient leaderid of
+                                                                              Just uri -> NotLeader leaderid uri
+                                                                              Nothing  -> TryAgainLater
+                                                            Nothing -> TryAgainLater
+                        WrapState(Candidate _) -> return TryAgainLater
+                        WrapState(Leader _ )   -> liftIO $ (insertEntry nodeLog entry >> return (StoredEntry entry)) `catch` \ (e :: IOException) -> return (ErrorStoringEntry (show e))
+
+  traceS s = ask >>= \ Node{..} -> liftIO $ putStrLn $ "[" ++ BS8.unpack nodeId ++ "] - " ++  s
 
 -- | Main loop for running a Raft Node.
 run :: (MonadCommand m) => Config -> SomeState -> m ()
 run config state = do
     event <- pollEvent
     (state', commands) <- handleEvent config state event
+    updateState state'
     interpretCommands commands
     run config state'
 

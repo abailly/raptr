@@ -28,7 +28,7 @@ library
                      , http-client, http-conduit, wai, warp, network-uri, http-types
                      , network, directory
                      , async, stm, random
-                     , bytestring, containers, binary, aeson, text
+                     , bytestring, containers, binary, aeson, text, lens
   default-language:    Haskell2010
 
 test-suite tests

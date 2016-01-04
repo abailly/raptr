@@ -22,6 +22,9 @@ emptyNodes = Map.empty
 
 data Client a = Client { nodes :: RaptrNodes }
 
+locateNode :: Client a -> NodeId -> Maybe URI
+locateNode Client{..} nid = Map.lookup nid nodes
+
 doBroadcast :: Client Value -> Message Value -> IO ()
 doBroadcast c@Client{..} message =
   forM_ (Map.elems nodes) (sendClient message)

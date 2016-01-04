@@ -15,9 +15,9 @@ import           Test.Hspec.Wai
 
 app :: IO Application
 app = do
-  q <- newQueueIO 10
-  mvar <- newMVar q
-  return $ server mvar
+  log <- openLog "test.log"
+  node <- newNode Nothing defaultRaftConfig (Client emptyNodes) log
+  return $ server node
 
 startStopServer action = bracket
                          (app >>= start defaultConfig)
