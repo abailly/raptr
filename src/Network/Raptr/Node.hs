@@ -11,10 +11,11 @@
 module Network.Raptr.Node where
 
 import           Control.Concurrent.Queue     as Q
-import           Control.Concurrent.STM       (atomically, orElse)
+import           Control.Concurrent.STM       (TVar, atomically, newTVarIO,
+                                               orElse, swapTVar)
 import           Control.Concurrent.Timer     as Timer
 import           Control.Monad                (foldM, forM_)
-import           Control.Monad.State          as State
+import           Control.Monad.Reader         as Read
 import           Control.Monad.Trans          (MonadIO, liftIO)
 import qualified Data.Binary                  as B
 import           Data.Binary.Put              (putWord32be, runPut)
@@ -33,42 +34,34 @@ import           System.IO.Storage
 import           System.Random                (randomRIO)
 
 
-handleCommand :: (MonadCommand m) => Node -> Command Value -> m Node
+handleCommand :: (MonadCommand m) => Node -> Command Value -> m ()
 handleCommand s c = case c of
     CBroadcast m -> do
         traceS $ "CBroadcast: " ++ show m
         liftIO $ doBroadcast (nodeClient s) m
-        return s
     CSend n m -> do
         traceS $ "CSend: " ++ show n ++ " -> " ++ show m
         liftIO $ doSend (nodeClient s) n m
-        return s
     CResetElectionTimeout a b -> do
         t <- liftIO $ randomRIO (a, b)
         traceS $ "Reset election timeout: " ++ show t
         liftIO $ Timer.reset (nodeElectionTimer s) t
-        return s
     CResetHeartbeatTimeout a -> do
         traceS $ "Reset heartbeat timeout: " ++ show a
         liftIO $ Timer.reset (nodeHeartbeatTimer s) a
-        return s
     CLog b -> do
         let m = LBS8.unpack $ Builder.toLazyByteString b
         traceS $ "Log: " ++ m
-        return s
     CTruncateLog i -> do
         traceS $ "Truncate: " ++ show i
         fail "not implemented"
-        return s
     CLogEntries es -> do
         traceS $ "Log entries: " ++ show es
         let l = nodeLog s
-        forM es (liftIO . insertEntry l)
-        return s
+        forM_ es (liftIO . insertEntry l)
     CSetCommitIndex i' -> do
-        let i = nodeCommitIndex s
+        i <- liftIO $ atomically $ swapTVar (nodeCommitIndex s) i'
         traceS $ "New commit index, to commit: " ++ entriesToCommit i i'
-        return $ s { nodeCommitIndex = i' }
 
 entriesToCommit :: Index -> Index -> String
 entriesToCommit prev new =
@@ -79,8 +72,8 @@ entriesToCommit prev new =
   where
     next = succIndex prev
 
-handleCommands :: (MonadCommand m) => Node -> [Command Value] -> m Node
-handleCommands = foldM handleCommand
+handleCommands :: (MonadCommand m) => Node -> [Command Value] -> m ()
+handleCommands = mapM_ . handleCommand
 
 data Node = Node { nodeId             :: NodeId
                  , nodeElectionTimer  :: Timer
@@ -88,19 +81,19 @@ data Node = Node { nodeId             :: NodeId
                  , nodeInput          :: Queue (Event Value)
                  , nodeClient         :: Client Value
                  , nodeLog            :: FileLog
-                 , nodeCommitIndex    :: Index
+                 , nodeCommitIndex    :: TVar Index
                  }
 
 
-newtype NodeServer a = NodeServer { runServer :: StateT Node IO a }
-                     deriving (Functor, Applicative, Monad, MonadState Node, MonadIO)
+newtype NodeServer a = NodeServer { runServer :: ReaderT Node IO a }
+                     deriving (Functor, Applicative, Monad, MonadReader Node, MonadIO)
 
 newNode :: Maybe (Queue (Event Value)) -> Config -> Client Value -> FileLog -> IO Node
 newNode maybeQ config handler log = do
   electionTimer <- newTimer
   heartbeatTimer <- newTimer
   q <- maybe (newQueueIO 100) return maybeQ
-
+  idx <- newTVarIO index0
   start electionTimer (_configElectionTimeout config)
   start heartbeatTimer (_configHeartbeatTimeout config)
 
@@ -110,10 +103,10 @@ newNode maybeQ config handler log = do
                  , nodeInput = q
                  , nodeClient = handler
                  , nodeLog = log
-                 , nodeCommitIndex = index0
+                 , nodeCommitIndex = idx
                  }
 
-class (MonadIO m, MonadState Node m) => MonadCommand m where
+class (MonadIO m, MonadReader Node m) => MonadCommand m where
   pollEvent :: m (Event Value)
   handleEvent :: Config -> SomeState -> Event Value -> m (SomeState, [Command Value])
   interpretCommands :: [Command Value] -> m ()
@@ -124,25 +117,25 @@ class (MonadIO m, MonadState Node m) => MonadCommand m where
 instance MonadLog NodeServer Value where
   logEntry :: Index -> NodeServer (Maybe (Entry Value))
   logEntry idx = traceS ("get log entry at index " ++ show idx) >>
-                 get >>= \ Node{..} -> liftIO (getEntry nodeLog idx)
+                 ask >>= \ Node{..} -> liftIO (getEntry nodeLog idx)
 
   logLastEntry :: NodeServer (Maybe (Entry Value))
   logLastEntry = traceS ("get last log entry") >>
-                 get >>= \ Node{..} -> liftIO (getLastEntry nodeLog)
+                 ask >>= \ Node{..} -> liftIO (getLastEntry nodeLog)
 
 instance MonadCommand NodeServer where
 
   pollEvent = traceS "polling event" >>
-              get >>= \ Node{..} -> liftIO $ atomically $ do
+              ask >>= \ Node{..} -> liftIO $ atomically $ do
                 (const EElectionTimeout `fmap` Timer.awaitSTM nodeElectionTimer)
                   `orElse` (const EHeartbeatTimeout `fmap` Timer.awaitSTM nodeHeartbeatTimer)
                   `orElse` Q.read nodeInput
 
   handleEvent config state event = traceS (show (_configNodeId config) ++ ", handling event " ++ show event ++ ", state: "++ show state) >>
-                                   get >>= \ Node{..} -> Raft.handle config state event
+                                   ask >>= \ Node{..} -> Raft.handle config state event
 
   interpretCommands commands = traceS ("interpreting commands " ++ show commands) >>
-                               get >>= flip handleCommands commands >>= State.put
+                               ask >>= flip handleCommands commands
 
 
 -- | Main loop for running a Raft Node.

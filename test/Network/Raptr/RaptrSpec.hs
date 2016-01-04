@@ -9,7 +9,7 @@ import           Control.Concurrent.Queue
 import           Control.Exception
 import           Control.Lens             ((^.))
 import           Control.Monad
-import           Control.Monad.State
+import           Control.Monad.Reader
 import           Control.Monad.Trans      (liftIO)
 import           Data.Binary
 import           Data.ByteString.Char8    (unpack)
@@ -31,7 +31,7 @@ startServer r@Raptr{..} = do
       nodeid = _configNodeId raftConfig
   log <- openLog $ unpack nodeid <.> "log"
   node <- newNode (Just q) raftConfig  (Client raptrNodes) log
-  nodethread <- async $ evalStateT (runServer (run raftConfig initialState)) node
+  nodethread <- async $ runReaderT (runServer (run raftConfig initialState)) node
   start (r { nodeThread = Just nodethread }) app
 
 raptrSpec = do
