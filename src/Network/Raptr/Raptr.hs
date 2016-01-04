@@ -13,7 +13,7 @@ module Network.Raptr.Raptr
         -- * Types
         Raptr(..),
         -- * Configuration
-        defaultConfig, localCluster, FileLog(..), createLog,
+        defaultConfig, localCluster, FileLog(..), openLog,
         -- * Control Server
         start,stop) where
 

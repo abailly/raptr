@@ -27,16 +27,13 @@ skipMagic = do
     then fail "incorrect file format, cannot read magic marker at beginning of file"
     else return ()
 
-createLog :: FilePath -> IO FileLog
-createLog path = do
+openLog :: FilePath -> IO FileLog
+openLog path = do
   exist <- doesFileExist path
   isdir <- doesDirectoryExist path
   when isdir $ throw $ userError ("log file " ++ path ++ " is a directory")
-  when (not exist) $ do  -- attempt to create file if it does not exist
-    h <- openBinaryFile path WriteMode
+  when (not exist) $ withBinaryFile path WriteMode $ \ h ->
     hPut h $ LBS8.toStrict $ runPut $ putWord32be magic
-    hFlush h
-    hClose h
   return $ FileLog path
 
 insertEntry :: FileLog -> Entry Value -> IO ()

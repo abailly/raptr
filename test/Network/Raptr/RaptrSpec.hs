@@ -25,7 +25,7 @@ startServer r@Raptr{..} = do
   m <- newMVar q
   let app = server m
       nodeid = _configNodeId raftConfig
-  log <- createLog $ unpack nodeid <.> "log"
+  log <- openLog $ unpack nodeid <.> "log"
   node <- newNode (Just q) raftConfig  (Client raptrNodes) log
   nodethread <- async $ evalStateT (runServer (run raftConfig initialState)) node
   start (r { nodeThread = Just nodethread }) app
