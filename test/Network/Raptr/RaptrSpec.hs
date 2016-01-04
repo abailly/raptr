@@ -1,4 +1,5 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 module Network.Raptr.RaptrSpec where
 
 import           Control.Concurrent       (threadDelay)
@@ -6,11 +7,14 @@ import           Control.Concurrent.Async
 import           Control.Concurrent.MVar
 import           Control.Concurrent.Queue
 import           Control.Exception
+import           Control.Lens             ((^.))
 import           Control.Monad
 import           Control.Monad.State
 import           Control.Monad.Trans      (liftIO)
 import           Data.Binary
 import           Data.ByteString.Char8    (unpack)
+import           Network.HTTP.Client
+import           Network.HTTP.Types
 import           Network.Raptr.Raptr
 import           Network.URI
 import           Network.Wai              (Application)
@@ -33,11 +37,18 @@ startServer r@Raptr{..} = do
 raptrSpec = do
 
   it "runs a 3 node cluster" $ do
-    cluster <- localCluster 3
+    servers <- localCluster 3 >>= mapM startServer
 
-    servers <- forM cluster startServer
-    threadDelay $ 10 * 1000 * 1000
-    False `shouldBe` True
+    manager <- newManager defaultManagerSettings
+    request <- parseUrl "http://localhost:30700/raptr/"
+    let req = request { checkStatus = \ s h ck -> Nothing
+                      , method = "PUT"
+                      , requestBody = RequestBodyLBS "1234567890" }
+    response <- httpLbs req manager
+
+    forM_ servers stop
+
+    statusCode (responseStatus response)  `shouldBe` 201
 
 
 

@@ -37,9 +37,9 @@ test-suite tests
   main-is:             Spec.hs
   build-depends:       base
                      , raptr
-                     , http-conduit
-                     , wai, warp, network-uri
-                     , stm, mtl, binary, bytestring
+                     , http-conduit, http-types
+                     , wai, warp, http-client, network-uri
+                     , stm, mtl, binary, bytestring, lens
                      , tasty >= 0.7, tasty-hspec, hspec, hspec-wai
                      , filepath, async
                      , QuickCheck
