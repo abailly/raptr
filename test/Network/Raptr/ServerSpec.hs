@@ -8,6 +8,7 @@ import           Control.Exception
 import           Control.Monad
 import           Data.Binary
 import           Network.Raptr.Raptr
+import           Network.Raptr.TestUtils
 import           Network.URI
 import           Network.Wai              (Application)
 import           Test.Hspec
@@ -19,10 +20,10 @@ app = do
   node <- newNode Nothing defaultRaftConfig (Client emptyNodes) log
   return $ server node
 
-startStopServer action = bracket
-                         (app >>= start defaultConfig)
-                         stop
-                         action
+startStopServer = bracket
+                  (removeFileSafely "test.log" >> app >>= start defaultConfig)
+                  (\ a -> stop a >> removeFileSafely "test.log")
+
 clientSpec :: Spec
 clientSpec = around startStopServer $ do
 

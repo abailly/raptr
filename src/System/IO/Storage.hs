@@ -33,6 +33,7 @@ module System.IO.Storage
          getAllData)
        where
 
+import           Control.DeepSeq
 import           Control.Exception          (throw)
 import           Control.Monad              (when)
 import qualified Data.Binary                as B
@@ -44,6 +45,7 @@ import           Data.Monoid                ((<>))
 import           Network.Kontiki.Raft       as Raft
 import           Network.Raptr.Types
 import           Prelude                    hiding (length)
+import qualified Prelude                    as P
 import           System.Directory           (doesDirectoryExist, doesFileExist)
 import           System.IO                  (IOMode (..), hClose, hFlush,
                                              hSetFileSize, openBinaryFile,
@@ -193,8 +195,7 @@ readAllData = do
     then return []
     else do
     (_,bs) <- readSingleEntry
-    rest   <- readAllData
-    return $ bs : rest
+    (eValue (B.decode bs):) <$> readAllData
 
 -- | Returns a (lazy) list of (lazy) 'ByteString' of all data stored within
 -- entries in this log file.
@@ -203,8 +204,11 @@ readAllData = do
 -- handle will be kept in so-called semi-closed state hence will return a lock which will prevent
 -- subsequent write operations on this file to operate properly.
 getAllData :: FileLog -> IO [ LBS8.ByteString ]
-getAllData FileLog{..} = withBinaryFile logName ReadMode $ \ h -> do
-    bs <- LBS8.hGetContents h
-    let pos = runGet (skipMagic >> readAllData) bs
-    return pos
+getAllData log@FileLog{..} = do
+  trace log $ "retrieving all data"
+  h <- openBinaryFile logName ReadMode
+  bs <- LBS8.hGetContents h
+  let pos = bs `deepseq` runGet (skipMagic >> readAllData) bs
+  pos `deepseq` hClose h
+  return pos
 
