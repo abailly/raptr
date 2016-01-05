@@ -47,7 +47,7 @@ addNewEntry node req sendResponse = do
    TryAgainLater -> putStrLn ("server cannot handle adding new entry now, try again later") >>
                     sendResponse (responseLBS status503 [("Content-Type", "text/plain")] (pack $ "cannot store new entry, try again later"))
    NotLeader nid uri -> putStrLn ("redirecting to leader node " ++ show nid ++ " at URI " ++ show uri) >>
-                        sendResponse (responseLBS status303 [("Content-Type", "text/plain"), ("Location", BS8.pack $ show uri)] "")
+                        sendResponse (responseLBS status302 [("Content-Type", "text/plain"), ("Location", BS8.pack $ show uri)] "")
    ErrorStoringEntry e -> putStrLn ("got error while trying to store entry: " ++ show e) >>
                           sendResponse (responseLBS status503 [("Content-Type", "text/plain")] (pack $ "cannot store new entry, got error : " ++ e))
 

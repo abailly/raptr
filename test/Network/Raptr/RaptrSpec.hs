@@ -42,16 +42,26 @@ raptrSpec = do
 
     manager <- newManager defaultManagerSettings
     request <- parseUrl "http://localhost:30700/raptr/"
-    let req = request { checkStatus = \ s h ck -> Nothing
-                      , method = "PUT"
-                      , requestBody = RequestBodyLBS "1234567890" }
-    response <- httpLbs req manager
+    let req = request { method = "PUT"
+                      , requestBody = RequestBodyLBS "1234567890"
+                      , redirectCount = 0 }
+    response <- (Just <$> httpLbs req manager) `catch` \(StatusCodeException s h _) ->
+                                                        if statusCode s==302
+                                                        then
+                                                          case lookup hLocation h of
+                                                           Nothing -> return Nothing
+                                                           Just u  -> do
+                                                             leaderUri <- parseUrl (unpack u)
+                                                             Just <$> httpLbs leaderUri { method = "PUT"
+                                                                                        , requestBody = RequestBodyLBS "1234567890" } manager
+                                                        else return Nothing
+
 
     threadDelay $ 10 * 1000 * 1000
 
     forM_ servers stop
 
-    statusCode (responseStatus response)  `shouldBe` 201
+    (statusCode . responseStatus) <$> response  `shouldBe` Just 201
 
 
 

@@ -13,7 +13,8 @@ import           Network.Raptr.Types
 import           Prelude                    hiding (length)
 import           System.Directory           (doesDirectoryExist, doesFileExist)
 import           System.IO                  (IOMode (..), hClose, hFlush,
-                                             openBinaryFile, withBinaryFile)
+                                             hSetFileSize, openBinaryFile,
+                                             withBinaryFile)
 
 data FileLog = FileLog { logName :: FilePath }
 
@@ -39,21 +40,47 @@ openLog path = do
 insertEntry :: FileLog -> Entry Value -> IO ()
 insertEntry FileLog{..} e = withBinaryFile logName AppendMode $ \ h -> do
   let bs = LBS8.toStrict $ runPut $ B.put e
-      ln = LBS8.toStrict $ runPut $ putWord32be $ (fromIntegral $ length bs) + 4
-  hPut h ln  -- Size of entry, including the 4 bytes of size itself
+      ln = LBS8.toStrict $ runPut $ putWord32be $ (fromIntegral $ length bs)
+  hPut h ln  -- Size of entry, excluding the 4 bytes of length
   hPut h bs  -- payload
 
+readUntilEntry :: B.Word64 -> Integer -> Get Integer
+readUntilEntry 0   pos = return pos
+readUntilEntry idx pos = do
+  empty <- isEmpty
+  if empty
+    then return pos
+    else do
+    ln <- getWord32be
+    bs <- getLazyByteString (fromIntegral ln)
+    readUntilEntry (idx - 1) (pos + fromIntegral ln + 4)
+
+truncateLogAtIndex :: FileLog -> Index -> IO ()
+truncateLogAtIndex FileLog{..} idx = do
+  truncateAt <- withBinaryFile logName ReadWriteMode $ \ h -> do
+    bs <- LBS8.hGetContents h
+    let pos = runGet (skipMagic >> readUntilEntry (unIndex idx) 0) bs
+    putStrLn $ "position is " ++ show pos
+    return pos
+  h <- openBinaryFile logName ReadWriteMode
+  hSetFileSize h (truncateAt + 4)
+  hClose h
+
 getEntryAt :: B.Word64 -> Get (Maybe (Entry Value))
-getEntryAt idx = do
+getEntryAt 0 = return Nothing
+getEntryAt 1 = do
   empty <- isEmpty
   if empty
     then return Nothing
     else do
     ln <- getWord32be
     bs <- getLazyByteString (fromIntegral ln)
-    if idx == 0
-      then return $ Just $ B.decode bs
-      else getEntryAt (idx - 1)
+    return $ Just $ B.decode bs
+getEntryAt idx = do
+  empty <- isEmpty
+  if empty
+    then return Nothing
+    else getEntryAt (idx - 1)
 
 getEntry :: FileLog -> Index -> IO (Maybe (Entry Value))
 getEntry FileLog{..} idx =  withBinaryFile logName ReadMode $ \ h -> do

@@ -60,7 +60,7 @@ handleCommand s c = case c of
         traceS $ "Log: " ++ m
     CTruncateLog i -> do
         traceS $ "Truncate: " ++ show i
-        fail "not implemented"
+        liftIO $ truncateLogAtIndex (nodeLog s) i
     CLogEntries es -> do
         traceS $ "Log entries: " ++ show es
         let l = nodeLog s
@@ -164,9 +164,6 @@ instance MonadCommand NodeServer where
   storeEntry bs = traceS ("storing new entry of length " ++ show (BS.length bs)) >>
                   ask >>= \ Node{..} -> do
                     e <- logLastEntry
-                    let lastIndex = maybe index0 eIndex e
-                        lastTerm = maybe term0 eTerm e
-                        entry = Entry (succIndex lastIndex) lastTerm bs
                     do
                       st <- liftIO $ atomically $ readTVar nodeState
                       case st of
@@ -176,7 +173,10 @@ instance MonadCommand NodeServer where
                                                                               Nothing  -> TryAgainLater
                                                             Nothing -> TryAgainLater
                         WrapState(Candidate _) -> return TryAgainLater
-                        WrapState(Leader _ )   -> liftIO $ (insertEntry nodeLog entry >> return (StoredEntry entry)) `catch` \ (e :: IOException) -> return (ErrorStoringEntry (show e))
+                        WrapState(Leader s')   -> do
+                          let lastIndex = maybe index0 eIndex e
+                              entry = Entry (succIndex lastIndex) (s' ^. lCurrentTerm) bs
+                          liftIO $ (insertEntry nodeLog entry >> return (StoredEntry entry)) `catch` \ (e :: IOException) -> return (ErrorStoringEntry (show e))
 
   traceS s = ask >>= \ Node{..} -> liftIO $ putStrLn $ "[" ++ BS8.unpack nodeId ++ "] - " ++  s
 
