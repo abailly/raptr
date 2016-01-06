@@ -7,7 +7,7 @@
 module Network.Raptr.Raptr
        (module Network.Raptr.Server,
         module Network.Raptr.Types,
-        module Network.Raptr.Node,
+        module N,
         module Network.Kontiki.Raft,
         module Network.Raptr.Client,
         -- * Types
@@ -15,9 +15,13 @@ module Network.Raptr.Raptr
         -- * Configuration
         defaultConfig, defaultRaftConfig, localCluster, FileLog(..), openLog,
         -- * Control Server
-        start,stop) where
+        startServer,start,stop) where
 
 import           Control.Concurrent.Async
+import           Control.Concurrent.Async
+import           Control.Concurrent.MVar
+import qualified Control.Concurrent.Queue as Q
+import           Control.Monad.Reader
 import           Data.ByteString.Char8    (pack, unpack)
 import qualified Data.Map                 as Map
 import           Data.Maybe               (catMaybes, fromJust)
@@ -26,7 +30,7 @@ import qualified Data.Set                 as Set
 import           Debug.Trace
 import           Network.Kontiki.Raft
 import           Network.Raptr.Client
-import           Network.Raptr.Node
+import           Network.Raptr.Node       as N
 import           Network.Raptr.Server
 import           Network.Raptr.Types
 import           Network.Socket
@@ -34,6 +38,7 @@ import           Network.URI              (nullURI, parseURI, parseURIReference,
                                            relativeTo, uriAuthority, uriPort)
 import           Network.Wai
 import           Network.Wai.Handler.Warp as W hiding (cancel)
+import           System.FilePath          ((<.>))
 import           System.IO.Storage
 import           System.Random
 
@@ -67,6 +72,10 @@ defaultRaftConfig = Config { _configNodeId = "unknown"
                            , _configHeartbeatTimeout = 2000 * 1000
                            }
 
+-- | Configures a local Raft cluster with given number of nodes
+--
+-- Nodes are run on 'localhost' with different ports whose range starts at 30700.
+-- TODO: makes this more configurable, or remove
 localCluster :: Int -> IO [ Raptr ]
 localCluster numNodes = let nodeNames = take numNodes $ map (pack . ("node" <>) . show) [1 ..]
                             confs = map (\ nid -> defaultRaftConfig { _configNodeId = nid, _configNodes = Set.fromList nodeNames }) nodeNames
@@ -81,6 +90,28 @@ localCluster numNodes = let nodeNames = take numNodes $ map (pack . ("node" <>) 
                                                    }) confs
 
 defaultConfig = Raptr 0 defaultRaftConfig emptyNodes Nothing Nothing
+
+-- | Starts both server and Raft node for given configuration.
+--
+-- TODO: contains a log of hardwiring, needs to be improved by adding more configuration
+-- to 'Raptr' type. Currently does the following:
+--
+--  * creates a new queue with maximum size 10
+--  * creates a new Raft node with default configuraiton, storing data in a file named
+--    according to 'nodeId'
+--  * starts node asynchronously
+--  * starts server
+startServer :: Raptr -> IO Raptr
+startServer r@Raptr{..} = do
+  putStrLn $ "starting raptr " ++ show r
+  q <- Q.newQueueIO 10
+  m <- newMVar q
+  let nodeid = _configNodeId raftConfig
+  log <- openLog $ unpack nodeid <.> "log"
+  node <- newNode (Just q) raftConfig  (Client raptrNodes) log
+  nodethread <- async $ runReaderT (runServer (N.run raftConfig initialState)) node
+  start (r { nodeThread = Just nodethread }) (server node)
+
 
 start :: Raptr -> Application -> IO Raptr
 start r@Raptr{..} app = do

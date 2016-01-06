@@ -27,17 +27,6 @@ import           System.IO.Storage        (getAllData)
 import           Test.Tasty
 import           Test.Tasty.Hspec
 
-startServer :: Raptr -> IO Raptr
-startServer r@Raptr{..} = do
-  putStrLn $ "starting raptr " ++ show r
-  q <- newQueueIO 10
-  m <- newMVar q
-  let nodeid = _configNodeId raftConfig
-  log <- openLog $ unpack nodeid <.> "log"
-  node <- newNode (Just q) raftConfig  (Client raptrNodes) log
-  nodethread <- async $ runReaderT (runServer (run raftConfig initialState)) node
-  start (r { nodeThread = Just nodethread }) (server node)
-
 logs = [ "node1.log", "node2.log", "node3.log" ]
 
 cleanUpLogs :: IO ()

@@ -26,7 +26,7 @@ library
   build-depends:       base >= 4.7 && < 5, mtl
                      , kontiki
                      , http-client, http-conduit, wai, warp, network-uri, http-types
-                     , network, directory
+                     , network, directory, filepath
                      , async, stm, random, deepseq
                      , bytestring, containers, binary, aeson, text, lens
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
