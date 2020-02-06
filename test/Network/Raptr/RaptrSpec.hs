@@ -34,13 +34,13 @@ cleanUpLogs = removeFiles logs
 
 tryInsertingEntry _       _   _     0     = return Nothing
 tryInsertingEntry manager url datum count = do
-  request <- parseUrl url
+  request <- parseUrlThrow url
   let req = request { method = "PUT"
                     , requestBody = RequestBodyLBS datum
                     , redirectCount = 0 }
-  (Just <$> httpLbs req manager) `catch` \(StatusCodeException s h _) ->
-                                          case statusCode s of
-                                           302 -> case lookup hLocation h of
+  (Just <$> httpLbs req manager) `catch` \(HttpExceptionRequest _ (StatusCodeException s h)) ->
+                                          case statusCode (responseStatus s) of
+                                           302 -> case lookup hLocation (responseHeaders s) of
                                                    Nothing -> return Nothing
                                                    Just u  -> tryInsertingEntry manager (unpack u) datum count
                                            503 -> threadDelay (1000 * 1000) >> tryInsertingEntry manager url datum (count - 1)
@@ -69,6 +69,3 @@ raptrSpec = before_ cleanUpLogs $ do
                    putStrLn $ "got data " ++ show datum
                    datum `shouldBe` [ "1234567890" ]
                )
-
-
-

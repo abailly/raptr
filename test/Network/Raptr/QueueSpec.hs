@@ -15,10 +15,10 @@ import           Test.QuickCheck
 import           Test.QuickCheck.Monadic
 
 data QAction = Put Int
-             | Take
-             | Flush
-             | Return (Maybe Int)
-             deriving (Eq,Show)
+    | Take
+    | Flush
+    | Return (Maybe Int)
+    deriving (Eq, Show)
 
 runActions :: Queue Int -> [ QAction ] -> STM [ Maybe Int ]
 runActions q []            = return []
@@ -42,7 +42,7 @@ actions n = oneof [ return []
 delta :: [QAction] -> Int
 delta q = delta' q 0
   where
-    delta' [] n = n
+    delta' [] n         = n
     delta' (Put _:qs) n = delta' qs (n+1)
     delta' (Take:qs) n  = delta' qs (n-1)
     delta' (Flush:qs) n = delta' qs 0
@@ -87,7 +87,7 @@ prop_put_fails_when_queue_is_full k = monadicIO $ do
   suff <- pick $ actions k
 
   let observe o = run $ atomically $ do
-        q <- empty k
+        q <- empty (fromInteger $ fromIntegral k)
         runActions q (P.take k (map Put [1..]) ++ o ++ suff)
 
   oc <- observe [ Put (k +1) ]

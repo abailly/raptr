@@ -13,6 +13,7 @@ import           Network.URI
 import           Network.Wai              (Application)
 import           Test.Hspec
 import           Test.Hspec.Wai
+import           Test.Hspec.Wai.Matcher
 
 app :: IO Application
 app = do
@@ -42,7 +43,7 @@ serverSpec = with app $ do
     let ev = EMessage "foo" msg
     post "/raptr/foo" (encode msg) `shouldRespondWith` ResponseMatcher { matchStatus = 200
                                                                        , matchHeaders = ["Content-Type" <:> "application/octet-stream"]
-                                                                       , matchBody = Just $ encode ev }
+                                                                       , matchBody = bodyEquals (encode ev) }
 
   it "on POST /raptr/foo it returns 503 if queue is full" $ do
     replicateM 10 $ post "/raptr/foo" (encode msg)

@@ -12,14 +12,15 @@ module Control.Concurrent.Queue
 
 import           Control.Concurrent.STM
 import qualified Control.Concurrent.STM.TBQueue as Q
+import           GHC.Natural
 import           Prelude                        hiding (read, take)
 
 newtype Queue a = Queue { queue :: Q.TBQueue a }
 
-empty :: Int -> STM (Queue a)
+empty :: Natural -> STM (Queue a)
 empty = (Queue <$>) . Q.newTBQueue
 
-newQueueIO :: Int -> IO (Queue a)
+newQueueIO :: Natural -> IO (Queue a)
 newQueueIO = (Queue <$>) . Q.newTBQueueIO
 
 -- | Try to put an element at 'end' of the queue
@@ -46,5 +47,3 @@ flush (Queue q) = loop q []
   where
     loop :: Q.TBQueue a -> [ a ] -> STM [ a ]
     loop q out = Q.tryReadTBQueue q >>= maybe (return $ reverse out) (loop q . (:out))
-
-

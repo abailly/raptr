@@ -20,7 +20,9 @@ type RaptrNodes = Map.Map NodeId URI
 emptyNodes :: RaptrNodes
 emptyNodes = Map.empty
 
-data Client a = Client { nodes :: RaptrNodes }
+data Client a = Client
+    { nodes :: RaptrNodes
+    }
 
 locateNode :: Client a -> NodeId -> Maybe URI
 locateNode Client{..} nid = Map.lookup nid nodes
@@ -33,15 +35,14 @@ doSend :: Client Value -> NodeId ->  Message Value -> IO ()
 doSend Client{..} node message =
   case Map.lookup node nodes of
    Nothing     -> return ()  -- TODO warning? cleanup com?
-   Just client  -> sendClient message client
+   Just client -> sendClient message client
 
 sendClient :: Message Value -> URI -> IO ()
 sendClient message uri =  do
   manager <- newManager defaultManagerSettings
 
-  request <- parseUrl (uriToString id uri "")
-  let req = request { checkStatus = \ s h ck -> Nothing
-                    , method = "POST"
+  request <- parseUrlThrow (uriToString id uri "")
+  let req = request { method = "POST"
                     , requestBody = RequestBodyLBS $ runPut $ B.put message }
 
   response <- httpLbs req manager

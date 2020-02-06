@@ -42,7 +42,7 @@ server node req sendResponse = do
 
 addNewEntry :: Node -> Application
 addNewEntry node req sendResponse = do
-  datum <- requestBody req
+  datum <- getRequestBodyChunk req
   result <- runReaderT (runServer $ storeEntry datum) node
   case result of
    StoredEntry e -> trace node ("server stored new entry " ++ show e) >>
