@@ -52,12 +52,12 @@ raptrSpec = before_ cleanUpLogs $ do
   it "runs a 3 node cluster" $ do
     servers <- localCluster 3 >>= mapM startServer
 
-    threadDelay $ 10 * 1000 * 1000 -- wait for election of a leader
+    threadDelay $ 2 * 1000 * 1000 -- wait for election of a leader
 
     manager <- newManager defaultManagerSettings
     response <- tryInsertingEntry manager "http://localhost:30700/raptr/" "1234567890" 3
 
-    when (response /= Nothing) $ threadDelay $ 5 * 1000 * 1000 -- wait for propagation to all logs
+    when (response /= Nothing) $ threadDelay $ 1000 * 1000 -- wait for propagation to all logs
 
     forM_ servers stop
 

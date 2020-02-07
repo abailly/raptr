@@ -8,6 +8,7 @@ import           Control.Concurrent.Queue
 import           Control.Concurrent.STM
 import           Control.Monad            (when)
 import           Control.Monad.Trans
+import           GHC.Natural
 import           Prelude                  hiding (take)
 import qualified Prelude                  as P
 import           Test.Hspec
@@ -82,15 +83,21 @@ prop_removes_fifo n m = [ Put n, Take, Put m ] ==~ [Put n, Put m, Take]
 prop_flush_is_idempotent :: Property
 prop_flush_is_idempotent = [Flush, Flush] ==~ [Flush]
 
-prop_put_fails_when_queue_is_full :: Int -> Property
+instance Arbitrary Natural where
+  arbitrary = do
+    Positive p <- (arbitrary :: Gen (Positive Integer))
+    pure $ fromInteger p
+
+prop_put_fails_when_queue_is_full :: Natural -> Property
 prop_put_fails_when_queue_is_full k = monadicIO $ do
+  let n = fromInteger $ fromIntegral k
   suff <- pick $ actions k
 
   let observe o = run $ atomically $ do
-        q <- empty (fromInteger $ fromIntegral k)
-        runActions q (P.take k (map Put [1..]) ++ o ++ suff)
+        q <- empty k
+        runActions q (P.take n (map Put [1..]) ++ o ++ suff)
 
-  oc <- observe [ Put (k +1) ]
+  oc <- observe [ Put (n +1) ]
   oc' <- observe []
 
   assert $ oc == oc'

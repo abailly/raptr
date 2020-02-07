@@ -11,31 +11,43 @@ import           Network.Raptr.Raptr
 import           Network.Raptr.TestUtils
 import           Network.URI
 import           Network.Wai              (Application)
+import           System.Directory         (removePathForcibly)
+import           System.IO
+import           System.Posix.Temp
 import           Test.Hspec
 import           Test.Hspec.Wai
 import           Test.Hspec.Wai.Matcher
 
-app :: IO Application
-app = do
-  log <- openLog "test.log"
-  node <- newNode Nothing defaultRaftConfig (Client emptyNodes) log
+app :: FilePath -> IO Application
+app logFile = do
+  nodeLog <- openLog logFile
+  node <- newNode Nothing defaultRaftConfig (Client emptyNodes) nodeLog
   return $ server node
 
-startStopServer = bracket
-                  (removeFileSafely "test.log" >> app >>= start defaultConfig)
-                  (\ a -> stop a >> removeFileSafely "test.log")
+
+startStopServer = bracket startServer stopServer
+  where
+    startServer = do
+      (logfile, hdl) <- mkstemp "test-log"
+      hClose hdl
+      theApp <- app logfile
+      s <- start defaultConfig theApp
+      pure (logfile, s)
+    stopServer (logFile, s) = do
+      stop s
+      removePathForcibly logFile
 
 clientSpec :: Spec
 clientSpec = around startStopServer $ do
 
-  it "can send message from client to server" $ \ srv -> do
+  it "can send message from client to server" $ \ (_, srv) -> do
     let p = raptrPort srv
         Just uri = parseURI $ "http://localhost:" ++ show p ++"/raptr/bar"
         msg :: Message Value = MRequestVote $ RequestVote term0 "foo" index0 term0
     sendClient msg uri -- expect no exception
 
 serverSpec :: Spec
-serverSpec = with app $ do
+serverSpec = with (app "/dev/null") $ do
 
   let msg :: Message Value = MRequestVote $ RequestVote term0 "foo" index0 term0
 
